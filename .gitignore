@@ -1,0 +1,26 @@
+# Secrets
+compose/.env
+compose/.env.*
+!compose/.env.example
+
+# Docker application data
+compose/data/
+
+# Media
+media/
+
+# Application runtime data
+configs/
+
+scripts/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.swp

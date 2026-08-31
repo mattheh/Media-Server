@@ -1,0 +1,211 @@
+services:
+
+  jellyfin:
+    image: jellyfin/jellyfin
+    container_name: jellyfin
+    networks:
+      - media
+    ports:
+      - "8096:8096"
+    volumes:
+      - ${SERVER_ROOT_DIR}/configs/jellyfin:/config
+      - ${SERVER_ROOT_DIR}/media:/media
+    restart: unless-stopped
+
+  dispatcharr:
+    image: ghcr.io/dispatcharr/dispatcharr:latest
+    container_name: dispatcharr
+    restart: unless-stopped
+    ports:
+      - "9191:9191"
+    volumes:
+      - dispatcharr_data:/data
+    environment:
+      - DISPATCHARR_ENV=aio
+      - REDIS_HOST=localhost
+      - CELERY_BROKER_URL=redis://localhost:6379/0
+      - DISPATCHARR_LOG_LEVEL=info
+    networks:
+      - media
+
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
+    container_name: jellyseerr
+    restart: unless-stopped
+    ports:
+      - "5055:5055"
+    volumes:
+      - ${SERVER_ROOT_DIR}/configs/jellyseerr:/app/config
+    networks:
+      - media
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    restart: unless-stopped
+    ports:
+      - "8989:8989"
+    volumes:
+      - ${SERVER_ROOT_DIR}/configs/sonarr:/config
+      - ${SERVER_ROOT_DIR}/media:/media
+    networks:
+      - media
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    restart: unless-stopped
+    ports:
+      - "7878:7878"
+    volumes:
+      - ${SERVER_ROOT_DIR}/configs/radarr:/config
+      - ${SERVER_ROOT_DIR}/media:/media
+    networks:
+      - media
+
+  questarr:
+    image: ghcr.io/doezer/questarr:latest
+    container_name: questarr
+    restart: unless-stopped
+    ports:
+      - "5050:5000"
+    volumes:
+      - ./data:/app/data
+      - ${SERVER_ROOT_DIR}/media/Downloads/Games:/downloads/games
+      - ${SERVER_ROOT_DIR}/media/Games/roms:/library/roms
+    environment:
+      - SQLITE_DB_PATH=/app/data/sqlite.db
+    networks:
+      - media
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    restart: unless-stopped
+    ports:
+      - "9696:9696"
+    volumes:
+      - ${SERVER_ROOT_DIR}/configs/prowlarr:/config
+    networks:
+      - media
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    restart: unless-stopped
+    volumes:
+      - ${SERVER_ROOT_DIR}/configs/qbittorrent:/config
+      - ${SERVER_ROOT_DIR}/media:/media
+    network_mode: "service:pia-wireguard"
+    depends_on:
+      - pia-wireguard
+
+  pia-wireguard:
+    image: thrnz/docker-wireguard-pia:latest
+    container_name: pia-wireguard
+    ports:
+      - "127.0.0.1:8080:8080/tcp"
+      - "6881:6881"
+      - "6881:6881/udp"
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - pia:/pia
+      - pia-shared:/pia-shared
+    environment:
+      - LOC=us_washington_dc
+      - USER=${PIA_USERNAME}
+      - PASS=${PIA_PASSWORD}
+      - LOCAL_NETWORK=192.168.1.0/24
+      - VPNDNS=0
+    networks:
+      - media
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    restart: unless-stopped
+    ports:
+      - "8191:8191"
+    environment:
+      - LOG_LEVEL=info
+    networks:
+      - media
+
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    ports:
+      - "6767:6767"
+    volumes:
+      - ${SERVER_ROOT_DIR}/configs/bazarr:/config
+      - ${SERVER_ROOT_DIR}/media:/media
+    restart: unless-stopped
+    networks:
+      - media
+  romm:
+    image: rommapp/romm:latest
+    container_name: romm
+    restart: unless-stopped
+    environment:
+      - DB_HOST=romm-db
+      - DB_NAME=romm # Should match MARIADB_DATABASE in mariadb
+      - DB_USER=romm-user # Should match MARIADB_USER in mariadb
+      - DB_PASSWD=${DB_PASSWD} # Should match MARIADB_PASSWORD in mariadb
+      - ROMM_AUTH_SECRET_KEY=${ROMM_AUTH_SECRET_KEY} # Generate a key with `openssl rand -hex 32`
+      - HASHEOUS_API_ENABLED=true
+      - IGDB_CLIENT_ID=${IGDB_CLIENT_ID}
+      - IGDB_CLIENT_SECRET=${IGDB_CLIENT_SECRET}
+      - STEAMGRIDDB_API_KEY=${STEAMGRIDDB_API_KEY}
+      - RETROACHIEVEMENTS_API_KEY=${RETROACHIEVEMENTS_API_KEY}
+    volumes:
+      - romm_resources:/romm/resources # Resources fetched from IGDB (covers, screenshots, etc.)
+      - romm_redis_data:/redis-data # Cached data for background tasks
+      - ${SERVER_ROOT_DIR}/media/Games:/romm/library # Your game library. Check https://github.com/rommapp/romm?tab=readme-ov-file#folder-structure for more details.
+      - ${SERVER_ROOT_DIR}/media/Games/assets:/romm/assets # Uploaded saves, states, etc.
+      - ${SERVER_ROOT_DIR}/configs/romm:/romm/config # Path where config.yml is stored
+    ports:
+      - 8085:8080
+    depends_on:
+      romm-db:
+        condition: service_healthy
+        restart: true
+    networks:
+      - media
+
+  romm-db:
+    image: mariadb:latest
+    container_name: romm-db
+    restart: unless-stopped
+    environment:
+      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD}
+      - MARIADB_DATABASE=romm
+      - MARIADB_USER=romm-user
+      - MARIADB_PASSWORD=${DB_PASSWD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      start_period: 30s
+      start_interval: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - media
+
+volumes:
+  dispatcharr_data:
+    name: dispatcharr_data
+  pia:
+    name: pia
+  pia-shared:
+    name: pia-shared
+  mysql_data:
+  romm_resources:
+  romm_redis_data:
+
+networks:
+  media:
+    external: true
